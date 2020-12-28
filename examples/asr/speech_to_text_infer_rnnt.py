@@ -25,8 +25,9 @@ import torch
 import json
 from tqdm.auto import tqdm
 
-from nemo.collections.asr.metrics.wer import WER, word_error_rate
-from nemo.collections.asr.models import EncDecCTCModel
+from nemo.collections.asr.metrics.wer import word_error_rate
+from nemo.collections.asr.metrics.rnnt_wer import RNNTWER
+from nemo.collections.asr.models import EncDecRNNTModel
 from nemo.utils import logging
 
 try:
@@ -60,15 +61,15 @@ def main():
 
     if args.asr_model.endswith('.nemo'):
         logging.info(f"Using local ASR model from {args.asr_model}")
-        asr_model = EncDecCTCModel.restore_from(restore_path=args.asr_model)
+        asr_model = EncDecRNNTModel.restore_from(restore_path=args.asr_model)
     else:
         logging.info(f"Using NGC cloud ASR model {args.asr_model}")
-        asr_model = EncDecCTCModel.from_pretrained(model_name=args.asr_model)
+        asr_model = EncDecRNNTModel.from_pretrained(model_name=args.asr_model)
     asr_model.setup_test_data(
         test_data_config={
             'sample_rate': args.sample_rate,
             'manifest_filepath': args.dataset,
-            'labels': asr_model.decoder.vocabulary,
+            'labels': asr_model.joint.vocabulary,
             'batch_size': args.batch_size,
             'normalize_transcripts': args.normalize_text,
         }
@@ -76,19 +77,19 @@ def main():
     if can_gpu:
         asr_model = asr_model.cuda()
     asr_model.eval()
-    labels_map = dict([(i, asr_model.decoder.vocabulary[i]) for i in range(len(asr_model.decoder.vocabulary))])
-    wer = WER(vocabulary=asr_model.decoder.vocabulary)
+    labels_map = dict([(i, asr_model.joint.vocabulary[i]) for i in range(len(asr_model.joint.vocabulary))])
+    wer = RNNTWER(asr_model.decoding)
     hypotheses = []
     references = []
     for test_batch in tqdm(asr_model.test_dataloader()):
         if can_gpu:
             test_batch = [x.cuda() for x in test_batch]
         with autocast():
-            log_probs, encoded_len, greedy_predictions = asr_model(
+            encoded, encoded_len = asr_model(
                 input_signal=test_batch[0], input_signal_length=test_batch[1]
             )
-        hypotheses += wer.ctc_decoder_predictions_tensor(greedy_predictions)
-        for batch_ind in range(greedy_predictions.shape[0]):
+            hypotheses += wer.decoding.rnnt_decoder_predictions_tensor(encoded, encoded_len)[0]
+        for batch_ind in range(test_batch[0].shape[0]):
             reference = ''.join([labels_map[c] for c in test_batch[2][batch_ind].cpu().detach().numpy()])
             references.append(reference)
         print(f'REF: {references[-1]} HYP: {hypotheses[-1]}')
