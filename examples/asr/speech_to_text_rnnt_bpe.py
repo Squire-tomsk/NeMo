@@ -75,6 +75,9 @@ def main(cfg):
     exp_manager(trainer, cfg.get("exp_manager", None))
     asr_model = EncDecRNNTBPEModel(cfg=cfg.model, trainer=trainer)
 
+    if 'checkpoint' in cfg.model:
+        asr_model = EncDecRNNTBPEModel.load_from_checkpoint(cfg.model.checkpoint)
+        print(f'Checkpoint loaded: {cfg.model.checkpoint}')
     trainer.fit(asr_model)
 
     if hasattr(cfg.model, 'test_ds') and cfg.model.test_ds.manifest_filepath is not None:
