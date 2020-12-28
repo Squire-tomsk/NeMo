@@ -175,6 +175,18 @@ class AudioText(_Collection):
 
         super().__init__(data)
 
+        import torch
+        from nemo.utils.tensor_arrays import NamedTupleArray, StringArray, IntListArray
+        self.data = NamedTupleArray(data,
+                                    {'id': torch.LongTensor,
+                                     'audio_file': StringArray,
+                                     'duration': torch.FloatTensor,
+                                     'text_tokens': IntListArray,
+                                     'offset': None,
+                                     'text_raw': StringArray,
+                                     'speaker': None,
+                                     'orig_sr': None})
+        logging.info("NamedTupleArray injected")
 
 class ASRAudioText(AudioText):
     """`AudioText` collector from asr structured json files."""
